@@ -1,0 +1,9 @@
+FROM docker.io/postgres:16-alpine
+ENV POSTGRES_HOST_AUTH_METHOD=trust
+ENV PGDATA=/bitnami/postgresql/data
+ENV POSTGRES_VOLUME_DIR=/bitnami/postgresql
+ENV BITNAMI_DEBUG=false
+RUN mkdir -p /bitnami/postgresql/data /var/run/postgresql && chmod 777 /var/run/postgresql && chown -R 70:70 /bitnami/postgresql /var/run/postgresql 2>/dev/null || true
+RUN cp /usr/local/share/postgresql/postgresql.conf.sample /etc/postgresql/postgresql.conf 2>/dev/null && printf "listen_addresses = '*'\nport = 5432\n" > /etc/postgresql/conf.d/custom.conf 2>/dev/null || true
+RUN printf '#!/bin/sh\nexport POSTGRES_HOST_AUTH_METHOD=trust\nexport PGDATA=/bitnami/postgresql/data\nexport POSTGRES_VOLUME_DIR=/bitnami/postgresql\nexec /usr/local/bin/docker-entrypoint.sh postgres "$@"\n' > /usr/local/bin/entrypoint-fix.sh 2>/dev/null && chmod +x /usr/local/bin/entrypoint-fix.sh 2>/dev/null || true
+ENTRYPOINT ["/usr/local/bin/entrypoint-fix.sh"]

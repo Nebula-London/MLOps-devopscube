@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+  floci:
+    image: floci/floci:latest
+    ports:
+      - "4566:4566"  # Floci AWS emulator port
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - FLOCI_AWS_SERVICES=eks,ec2,iam,s3

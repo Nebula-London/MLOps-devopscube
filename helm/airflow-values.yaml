@@ -1,0 +1,98 @@
+postgresql:
+  enabled: false
+
+airflow:
+  image:
+    repository: apache/airflow
+    tag: 2.11.2-python3.11
+    pullPolicy: IfNotPresent
+  config:
+    core:
+      load_examples: "False"
+      executor: "SequentialExecutor"
+    database:
+      sql_alchemy_conn: postgresql+psycopg2://airflow:airflow@airflow-postgresql:5432/airflow
+    webserver:
+      secret_key: ""
+    logging:
+      remote_logging: "False"
+
+service:
+  type: ClusterIP
+
+redis:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+webserver:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+dagsProcessor:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+
+triggerer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+statsd:
+  enabled: true
+
+createUserJob:
+  enabled: true
+  defaultUser:
+    role: Admin
+    username: airflow
+    email: airflow@airflow.com
+    firstName: airflow
+    lastName: user
+    password: airflow
+
+runMigrations:
+  enabled: true
