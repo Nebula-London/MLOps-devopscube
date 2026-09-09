@@ -33,8 +33,8 @@ The `dataset_pipeline` DAG is fully reproducible from a fresh clone:
 ┌─────────────────────────────────────────────────────┐
 │             Kubernetes (k3s inside Floci)            │
 │  ┌─────────────────────────────────────────────┐    │
-│  │ Apache Airflow 2.11                         │    │
-│  │  Webserver │ Scheduler │ Worker │ Triggerer │    │
+│  │ Apache Airflow 2.11 (KubernetesExecutor)   │    │
+│  │  Webserver │ Scheduler │ Triggerer          │    │
 │  │  git-sync → this repo (dags/)               │    │
 │  │  └── dataset_pipeline DAG                   │    │
 │  │        pull_data → modify_data → push_data  │    │
@@ -116,7 +116,7 @@ pip install "dvc[s3]"
 Already installed in the Quick Start. Verify:
 
 ```bash
-kubectl get pods -n airflow | grep -E "webserver|scheduler|worker"
+kubectl get pods -n airflow | grep -E "webserver|scheduler|triggerer"
 helm list -n airflow
 ```
 
@@ -306,9 +306,11 @@ MLOps/
 
 ### Airflow
 
-- **Executor**: SequentialExecutor
+- **Executor**: KubernetesExecutor
 - **Database**: External PostgreSQL (`airflow-postgresql:5432`)
 - **Image**: `apache/airflow:2.11.2-python3.11`
+- **Worker / Redis**: removed (not needed with KubernetesExecutor)
+- **StatsD**: enabled
 - **User**: `airflow` / `airflow` (Admin)
 - **DAGs**: git-synced from this repo's `dags/` (see `helm/airflow-values.yaml`)
 

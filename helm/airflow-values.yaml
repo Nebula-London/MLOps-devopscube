@@ -5,33 +5,10 @@ defaultAirflowTag: "2.11.2-python3.11"
 postgresql:
   enabled: false
 
-airflow:
-  config:
-    core:
-      load_examples: "False"
-      executor: "SequentialExecutor"
-    database:
-      sql_alchemy_conn: postgresql+psycopg2://airflow:airflow@airflow-postgresql:5432/airflow
-    webserver:
-      secret_key: ""
-    logging:
-      remote_logging: "False"
+executor: "KubernetesExecutor"
 
 service:
   type: ClusterIP
-
-redis:
-  enabled: true
-  persistence:
-    enabled: true
-    size: 1Gi
-  resources:
-    requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: 200m
-      memory: 256Mi
 
 webserver:
   replicas: 1
@@ -48,31 +25,13 @@ scheduler:
   resources:
     requests:
       cpu: 200m
-      memory: 256Mi
-    limits:
-      cpu: 500m
       memory: 512Mi
-
-worker:
-  replicas: 1
-  resources:
-    requests:
-      cpu: 200m
-      memory: 256Mi
     limits:
-      cpu: 500m
-      memory: 512Mi
-
-dagsProcessor:
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 300m
-      memory: 512Mi
+      cpu: 1
+      memory: 1Gi
 
 triggerer:
+  replicas: 1
   resources:
     requests:
       cpu: 100m
