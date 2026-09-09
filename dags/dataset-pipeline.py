@@ -1,14 +1,20 @@
 import datetime
+import os
+
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from kubernetes.client import models as k8s
 
-# Configuration
-GIT_REPO = "git@github.com:Nebula-London/MLOps-devopscube.git"
-GIT_BRANCH = "main"
+# Configuration (all overridable via Airflow environment variables)
+GIT_REPO = os.environ.get(
+    "MLOPS_GIT_REPO", "git@github.com:Nebula-London/MLOps-devopscube.git"
+)
+GIT_BRANCH = os.environ.get("MLOPS_GIT_BRANCH", "main")
 DVC_DATA_FILE = "phase-1-local-dev/datasets/employee_attrition.csv"
-DVC_IMAGE = "airflow-dvc-worker:1.0.0"
-DVC_REMOTE_ENDPOINT = "http://172.17.0.1:4566"
+DVC_IMAGE = os.environ.get("DVC_IMAGE", "airflow-dvc-worker:1.0.0")
+DVC_REMOTE_ENDPOINT = os.environ.get(
+    "DVC_REMOTE_ENDPOINT", "http://172.17.0.1:4566"
+)
 
 RESOURCES = k8s.V1ResourceRequirements(
     requests={"memory": "256Mi", "cpu": "100m"},
@@ -32,6 +38,7 @@ SSH_KEY_VOLUME = k8s.V1Volume(
     secret=k8s.V1SecretVolumeSource(
         secret_name="airflow-git-ssh",
         default_mode=0o600,
+        optional=True,
     )
 )
 
@@ -40,6 +47,15 @@ SSH_KEY_VOLUME_MOUNT = k8s.V1VolumeMount(
     mount_path="/git-ssh",
     read_only=True
 )
+
+GIT_CREDENTIALS_ENV = [
+    k8s.V1EnvFromSource(
+        secret_ref=k8s.V1SecretEnvSource(
+            name="git-credentials",
+            optional=True,
+        )
+    )
+]
 
 COMMON_ENV = {
     "GIT_REPO": GIT_REPO,
@@ -56,6 +72,7 @@ COMMON_ENV = {
 # =============================================================================
 TASK1_SCRIPT = '''
 import os, subprocess, shutil
+from urllib.parse import quote
 
 GIT_REPO   = os.environ["GIT_REPO"]
 GIT_BRANCH = os.environ["GIT_BRANCH"]
@@ -76,7 +93,23 @@ def dvc_cmd(*args, cwd=None):
     import sys
     run([sys.executable, "-m", "dvc"] + list(args), cwd=cwd)
 
-print("=== Task 1: Clone + DVC Pull ===")
+# Determine git auth: SSH deploy key (airflow-git-ssh) OR HTTPS PAT (git-credentials)
+if os.path.exists("/git-ssh/gitSshKey"):
+    AUTH = "ssh"
+    run(["cp", "/git-ssh/gitSshKey", "/tmp/gitSshKey"])
+    run(["chmod", "600", "/tmp/gitSshKey"])
+    CLONE_URL = GIT_REPO
+elif os.environ.get("GIT_SYNC_USERNAME") and os.environ.get("GIT_SYNC_PASSWORD"):
+    AUTH = "https"
+    creds = f"{quote(os.environ['GIT_SYNC_USERNAME'])}:{quote(os.environ['GIT_SYNC_PASSWORD'])}@"
+    CLONE_URL = GIT_REPO.replace("https://", f"https://{creds}", 1)
+else:
+    raise RuntimeError(
+        "No git credentials available. Create the airflow-git-ssh secret (SSH key) "
+        "or git-credentials secret (GIT_SYNC_USERNAME/GIT_SYNC_PASSWORD) - see README."
+    )
+
+print(f"=== Task 1: Clone ({AUTH}) + DVC Pull ===")
 
 # Clean shared mount from previous runs
 SHARED_MOUNT = "/shared"
@@ -84,13 +117,11 @@ for item in os.listdir(SHARED_MOUNT):
     item_path = os.path.join(SHARED_MOUNT, item)
     shutil.rmtree(item_path) if os.path.isdir(item_path) else os.remove(item_path)
 
-# Fix SSH key permissions and clone
-run(["cp", "/git-ssh/gitSshKey", "/tmp/gitSshKey"])
-run(["chmod", "600", "/tmp/gitSshKey"])
-run(["git", "clone", "-b", GIT_BRANCH, GIT_REPO, SHARED_DIR])
+run(["git", "clone", "-b", GIT_BRANCH, CLONE_URL, SHARED_DIR])
 run(["git", "config", "user.email", "airflow@devopscube.com"], cwd=SHARED_DIR)
 run(["git", "config", "user.name", "Airflow"], cwd=SHARED_DIR)
-run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
+if AUTH == "ssh":
+    run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
 
 # Point DVC remote at the LocalStack endpoint reachable from the cluster
 dvc_cmd("remote", "modify", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
@@ -162,6 +193,7 @@ print("=== Task 2 Complete ===")
 # =============================================================================
 TASK3_SCRIPT = '''
 import os, subprocess, sys, shutil
+from urllib.parse import quote
 
 DVC_DATA_FILE = os.environ["DVC_DATA_FILE"]
 SHARED_DIR    = os.environ["SHARED_DIR"]
@@ -181,12 +213,21 @@ def run(cmd, cwd=None):
 def dvc_cmd(*args, cwd=None):
     run([sys.executable, "-m", "dvc"] + list(args), cwd=cwd)
 
-print("=== Task 3: DVC Push + Git Commit ===")
+# Same auth detection as Task 1 to ensure SSH/push works
+if os.path.exists("/git-ssh/gitSshKey"):
+    AUTH = "ssh"
+    run(["cp", "/git-ssh/gitSshKey", "/tmp/gitSshKey"])
+    run(["chmod", "600", "/tmp/gitSshKey"])
+    run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
+elif os.environ.get("GIT_SYNC_USERNAME") and os.environ.get("GIT_SYNC_PASSWORD"):
+    AUTH = "https"
+    creds = f"{quote(os.environ['GIT_SYNC_USERNAME'])}:{quote(os.environ['GIT_SYNC_PASSWORD'])}@"
+    AUTH_URL = os.environ["GIT_REPO"].replace("https://", f"https://{creds}", 1)
+    run(["git", "remote", "set-url", "origin", AUTH_URL], cwd=SHARED_DIR)
+else:
+    raise RuntimeError("No git credentials available - see README.")
 
-# Fix SSH key permissions and ensure git-over-SSH config
-run(["cp", "/git-ssh/gitSshKey", "/tmp/gitSshKey"])
-run(["chmod", "600", "/tmp/gitSshKey"])
-run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
+print(f"=== Task 3: DVC Push + Git Commit ({AUTH}) ===")
 
 # Point DVC remote at the LocalStack endpoint reachable from the cluster
 dvc_cmd("remote", "modify", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
@@ -239,6 +280,7 @@ with DAG(
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
+        env_from=GIT_CREDENTIALS_ENV,
         volumes=[SHARED_VOLUME, SSH_KEY_VOLUME],
         volume_mounts=[SHARED_VOLUME_MOUNT, SSH_KEY_VOLUME_MOUNT],
         cmds=["python", "-c"],
@@ -260,6 +302,7 @@ with DAG(
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
+        env_from=GIT_CREDENTIALS_ENV,
         volumes=[SHARED_VOLUME, SSH_KEY_VOLUME],
         volume_mounts=[SHARED_VOLUME_MOUNT, SSH_KEY_VOLUME_MOUNT],
         cmds=["python", "-c"],
@@ -281,6 +324,7 @@ with DAG(
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
+        env_from=GIT_CREDENTIALS_ENV,
         volumes=[SHARED_VOLUME, SSH_KEY_VOLUME],
         volume_mounts=[SHARED_VOLUME_MOUNT, SSH_KEY_VOLUME_MOUNT],
         cmds=["python", "-c"],

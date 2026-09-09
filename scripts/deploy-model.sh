@@ -1,7 +1,8 @@
 #!/bin/bash
-# Source the environment variables
+# Source the environment variables from the infrastructure directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/set-env.sh"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$ROOT_DIR/infrastructure/set-env.sh"
 
 # Wait for the cluster to be active (we assume the cluster was created by create-cluster.sh)
 echo "Waiting for cluster to be active..."
@@ -35,7 +36,7 @@ echo "Kubectl configured - you can now run kubectl commands directly"
 
 # Apply the Kubernetes manifest using the Floci EKS kubeconfig
 echo "Deploying ML model..."
-KUBECONFIG="$KUBECONFIG_FILE" kubectl apply -f "$SCRIPT_DIR/k8s/ml-model.yaml"
+KUBECONFIG="$KUBECONFIG_FILE" kubectl apply -f "$ROOT_DIR/k8s/ml-model.yaml"
 
 echo "Deployment completed. Check status with:"
 echo "KUBECONFIG=$KUBECONFIG_FILE kubectl get deployments"
