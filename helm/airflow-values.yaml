@@ -1,11 +1,11 @@
+airflowVersion: 2.11.2
+defaultAirflowRepository: apache/airflow
+defaultAirflowTag: "2.11.2-python3.11"
+
 postgresql:
   enabled: false
 
 airflow:
-  image:
-    repository: apache/airflow
-    tag: 2.11.2-python3.11
-    pullPolicy: IfNotPresent
   config:
     core:
       load_examples: "False"
@@ -38,10 +38,10 @@ webserver:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 1Gi
 
 scheduler:
   replicas: 1
@@ -93,6 +93,14 @@ createUserJob:
     firstName: airflow
     lastName: user
     password: airflow
+
+dags:
+  gitSync:
+    enabled: true
+    repo: https://github.com/Nebula-London/MLOps-devopscube.git
+    branch: main
+    subPath: dags
+    depth: 1
 
 runMigrations:
   enabled: true
