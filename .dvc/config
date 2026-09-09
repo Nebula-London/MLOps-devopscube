@@ -1,0 +1,7 @@
+[core]
+    remote = storage
+['remote "storage"']
+    url = s3://ml-dvc-store
+    endpointurl = http://127.0.0.1:4566
+    access_key_id = test
+    secret_access_key = test

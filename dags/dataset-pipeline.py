@@ -4,14 +4,11 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from kubernetes.client import models as k8s
 
 # Configuration
-GIT_REPO = "https://github.com/techiescamp/mlops-for-devops-dev.git"
+GIT_REPO = "git@github.com:Nebula-London/MLOps-devopscube.git"
 GIT_BRANCH = "main"
 DVC_DATA_FILE = "phase-1-local-dev/datasets/employee_attrition.csv"
 DVC_IMAGE = "techiescamp/airflow-dvc-worker:v2.0.0"
-
-GIT_SECRET = k8s.V1EnvFromSource(
-    secret_ref=k8s.V1SecretEnvSource(name="git-credentials")
-)
+DVC_REMOTE_ENDPOINT = "http://172.17.0.1:4566"
 
 RESOURCES = k8s.V1ResourceRequirements(
     requests={"memory": "256Mi", "cpu": "100m"},
@@ -30,11 +27,27 @@ SHARED_VOLUME_MOUNT = k8s.V1VolumeMount(
     mount_path="/shared"
 )
 
+SSH_KEY_VOLUME = k8s.V1Volume(
+    name="git-ssh",
+    secret=k8s.V1SecretVolumeSource(
+        secret_name="airflow-git-ssh",
+        default_mode=0o600,
+    )
+)
+
+SSH_KEY_VOLUME_MOUNT = k8s.V1VolumeMount(
+    name="git-ssh",
+    mount_path="/git-ssh",
+    read_only=True
+)
+
 COMMON_ENV = {
     "GIT_REPO": GIT_REPO,
     "GIT_BRANCH": GIT_BRANCH,
     "DVC_DATA_FILE": DVC_DATA_FILE,
     "SHARED_DIR": "/shared/repo",
+    "DVC_REMOTE_ENDPOINT": DVC_REMOTE_ENDPOINT,
+    "GIT_SSH_COMMAND": "ssh -i /git-ssh/gitSshKey -o IdentitiesOnly=yes -o StrictHostKeyChecking=no",
     "RUN_DATE": "{{ ds }}",
 }
 
@@ -44,12 +57,12 @@ COMMON_ENV = {
 TASK1_SCRIPT = '''
 import os, subprocess, shutil
 
-GIT_REPO     = os.environ["GIT_REPO"]
-GIT_BRANCH   = os.environ["GIT_BRANCH"]
-SHARED_DIR   = os.environ["SHARED_DIR"]
-GIT_USERNAME = os.environ["GIT_SYNC_USERNAME"]
-GIT_TOKEN    = os.environ["GIT_SYNC_PASSWORD"]
-CSV_SOURCE   = os.environ["DVC_DATA_FILE"]
+GIT_REPO   = os.environ["GIT_REPO"]
+GIT_BRANCH = os.environ["GIT_BRANCH"]
+SHARED_DIR = os.environ["SHARED_DIR"]
+CSV_SOURCE = os.environ["DVC_DATA_FILE"]
+ENDPOINT   = os.environ["DVC_REMOTE_ENDPOINT"]
+GIT_SSH    = os.environ["GIT_SSH_COMMAND"]
 
 def run(cmd, cwd=None):
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
@@ -71,11 +84,15 @@ for item in os.listdir(SHARED_MOUNT):
     item_path = os.path.join(SHARED_MOUNT, item)
     shutil.rmtree(item_path) if os.path.isdir(item_path) else os.remove(item_path)
 
-# Clone repo
-repo_url = GIT_REPO.replace("https://", f"https://{GIT_USERNAME}:{GIT_TOKEN}@")
-run(["git", "clone", "-b", GIT_BRANCH, repo_url, SHARED_DIR])
+# Fix SSH key permissions and clone
+run(["chmod", "600", "/git-ssh/gitSshKey"])
+run(["git", "clone", "-b", GIT_BRANCH, GIT_REPO, SHARED_DIR])
 run(["git", "config", "user.email", "airflow@devopscube.com"], cwd=SHARED_DIR)
 run(["git", "config", "user.name", "Airflow"], cwd=SHARED_DIR)
+run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
+
+# Point DVC remote at the LocalStack endpoint reachable from the cluster
+dvc_cmd("remote", "modify", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
 
 # DVC pull
 print("Pulling DVC data...")
@@ -149,6 +166,8 @@ DVC_DATA_FILE = os.environ["DVC_DATA_FILE"]
 SHARED_DIR    = os.environ["SHARED_DIR"]
 RUN_DATE      = os.environ["RUN_DATE"]
 GIT_BRANCH    = os.environ["GIT_BRANCH"]
+ENDPOINT      = os.environ["DVC_REMOTE_ENDPOINT"]
+GIT_SSH       = os.environ["GIT_SSH_COMMAND"]
 
 def run(cmd, cwd=None):
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
@@ -163,7 +182,14 @@ def dvc_cmd(*args, cwd=None):
 
 print("=== Task 3: DVC Push + Git Commit ===")
 
-# DVC add and push to S3
+# Fix SSH key permissions and ensure git-over-SSH config
+run(["chmod", "600", "/git-ssh/gitSshKey"])
+run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
+
+# Point DVC remote at the LocalStack endpoint reachable from the cluster
+dvc_cmd("remote", "modify", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
+
+# DVC add and push to S3/LocalStack
 dvc_cmd("add", DVC_DATA_FILE, cwd=SHARED_DIR)
 dvc_cmd("push", cwd=SHARED_DIR)
 
@@ -210,10 +236,9 @@ with DAG(
         image_pull_policy="Always",
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
-        env_from=[GIT_SECRET],
         env_vars=COMMON_ENV,
-        volumes=[SHARED_VOLUME],
-        volume_mounts=[SHARED_VOLUME_MOUNT],
+        volumes=[SHARED_VOLUME, SSH_KEY_VOLUME],
+        volume_mounts=[SHARED_VOLUME_MOUNT, SSH_KEY_VOLUME_MOUNT],
         cmds=["python", "-c"],
         arguments=[TASK1_SCRIPT],
         get_logs=True,
@@ -233,8 +258,8 @@ with DAG(
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
-        volumes=[SHARED_VOLUME],
-        volume_mounts=[SHARED_VOLUME_MOUNT],
+        volumes=[SHARED_VOLUME, SSH_KEY_VOLUME],
+        volume_mounts=[SHARED_VOLUME_MOUNT, SSH_KEY_VOLUME_MOUNT],
         cmds=["python", "-c"],
         arguments=[TASK2_SCRIPT],
         get_logs=True,
@@ -253,10 +278,9 @@ with DAG(
         image_pull_policy="Always",
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
-        env_from=[GIT_SECRET],
         env_vars=COMMON_ENV,
-        volumes=[SHARED_VOLUME],
-        volume_mounts=[SHARED_VOLUME_MOUNT],
+        volumes=[SHARED_VOLUME, SSH_KEY_VOLUME],
+        volume_mounts=[SHARED_VOLUME_MOUNT, SSH_KEY_VOLUME_MOUNT],
         cmds=["python", "-c"],
         arguments=[TASK3_SCRIPT],
         get_logs=True,
