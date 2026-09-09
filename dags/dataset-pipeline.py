@@ -7,7 +7,7 @@ from kubernetes.client import models as k8s
 GIT_REPO = "git@github.com:Nebula-London/MLOps-devopscube.git"
 GIT_BRANCH = "main"
 DVC_DATA_FILE = "phase-1-local-dev/datasets/employee_attrition.csv"
-DVC_IMAGE = "techiescamp/airflow-dvc-worker:v2.0.0"
+DVC_IMAGE = "airflow-dvc-worker:1.0.0"
 DVC_REMOTE_ENDPOINT = "http://172.17.0.1:4566"
 
 RESOURCES = k8s.V1ResourceRequirements(
@@ -233,7 +233,7 @@ with DAG(
         name="dvc-pull",
         namespace="airflow",
         image=DVC_IMAGE,
-        image_pull_policy="Always",
+        image_pull_policy="IfNotPresent",
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
@@ -254,7 +254,7 @@ with DAG(
         name="dvc-modify",
         namespace="airflow",
         image=DVC_IMAGE,
-        image_pull_policy="Always",
+        image_pull_policy="IfNotPresent",
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
@@ -275,7 +275,7 @@ with DAG(
         name="dvc-push",
         namespace="airflow",
         image=DVC_IMAGE,
-        image_pull_policy="Always",
+        image_pull_policy="IfNotPresent",
         service_account_name="airflow-dvc-sa",
         container_resources=RESOURCES,
         env_vars=COMMON_ENV,
