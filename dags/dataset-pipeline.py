@@ -124,7 +124,7 @@ if AUTH == "ssh":
     run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
 
 # Point DVC remote at the LocalStack endpoint reachable from the cluster
-dvc_cmd("remote", "modify", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
+dvc_cmd("remote", "modify", "--local", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
 
 # DVC pull
 print("Pulling DVC data...")
@@ -230,7 +230,7 @@ else:
 print(f"=== Task 3: DVC Push + Git Commit ({AUTH}) ===")
 
 # Point DVC remote at the LocalStack endpoint reachable from the cluster
-dvc_cmd("remote", "modify", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
+dvc_cmd("remote", "modify", "--local", "storage", "endpointurl", ENDPOINT, cwd=SHARED_DIR)
 
 # DVC add and push to S3/LocalStack
 dvc_cmd("add", DVC_DATA_FILE, cwd=SHARED_DIR)
