@@ -47,7 +47,7 @@ COMMON_ENV = {
     "DVC_DATA_FILE": DVC_DATA_FILE,
     "SHARED_DIR": "/shared/repo",
     "DVC_REMOTE_ENDPOINT": DVC_REMOTE_ENDPOINT,
-    "GIT_SSH_COMMAND": "ssh -i /git-ssh/gitSshKey -o IdentitiesOnly=yes -o StrictHostKeyChecking=no",
+    "GIT_SSH_COMMAND": "ssh -i /tmp/gitSshKey -o IdentitiesOnly=yes -o StrictHostKeyChecking=no",
     "RUN_DATE": "{{ ds }}",
 }
 
@@ -85,7 +85,8 @@ for item in os.listdir(SHARED_MOUNT):
     shutil.rmtree(item_path) if os.path.isdir(item_path) else os.remove(item_path)
 
 # Fix SSH key permissions and clone
-run(["chmod", "600", "/git-ssh/gitSshKey"])
+run(["cp", "/git-ssh/gitSshKey", "/tmp/gitSshKey"])
+run(["chmod", "600", "/tmp/gitSshKey"])
 run(["git", "clone", "-b", GIT_BRANCH, GIT_REPO, SHARED_DIR])
 run(["git", "config", "user.email", "airflow@devopscube.com"], cwd=SHARED_DIR)
 run(["git", "config", "user.name", "Airflow"], cwd=SHARED_DIR)
@@ -183,7 +184,8 @@ def dvc_cmd(*args, cwd=None):
 print("=== Task 3: DVC Push + Git Commit ===")
 
 # Fix SSH key permissions and ensure git-over-SSH config
-run(["chmod", "600", "/git-ssh/gitSshKey"])
+run(["cp", "/git-ssh/gitSshKey", "/tmp/gitSshKey"])
+run(["chmod", "600", "/tmp/gitSshKey"])
 run(["git", "config", "core.sshCommand", GIT_SSH], cwd=SHARED_DIR)
 
 # Point DVC remote at the LocalStack endpoint reachable from the cluster
